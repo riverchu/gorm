@@ -102,6 +102,12 @@ func TestJoinConds(t *testing.T) {
 	if !regexp.MustCompile("SELECT .* FROM .users. left join pets.*join accounts.*").MatchString(stmt.SQL.String()) {
 		t.Errorf("joins should be ordered, but got %v", stmt.SQL.String())
 	}
+
+	iv := DB.Table(`table_invoices`).Select(`seller, SUM(total) as total, SUM(paid) as paid, SUM(balance) as balance`).Group(`seller`)
+	stmt = dryDB.Table(`table_employees`).Select(`id, name, iv.total, iv.paid, iv.balance`).Joins(`LEFT JOIN (?) AS iv ON iv.seller = table_employees.id`, iv).Scan(&user).Statement
+	if !regexp.MustCompile("SELECT id, name, iv.total, iv.paid, iv.balance FROM .table_employees. LEFT JOIN \\(SELECT seller, SUM\\(total\\) as total, SUM\\(paid\\) as paid, SUM\\(balance\\) as balance FROM .table_invoices. GROUP BY .seller.\\) AS iv ON iv.seller = table_employees.id").MatchString(stmt.SQL.String()) {
+		t.Errorf("joins should be ordered, but got %v", stmt.SQL.String())
+	}
 }
 
 func TestJoinOn(t *testing.T) {
@@ -109,14 +115,15 @@ func TestJoinOn(t *testing.T) {
 	DB.Save(&user)
 
 	var user1 User
-	onQuery := DB.Select("id").Where("user_id = users.id AND name = ?", "joins-on_pet_1").Model(&Pet{})
+	onQuery := DB.Where(&Pet{Name: "joins-on_pet_1"})
 
 	if err := DB.Joins("NamedPet", onQuery).Where("users.name = ?", user.Name).First(&user1).Error; err != nil {
 		t.Fatalf("Failed to load with joins on, got error: %v", err)
 	}
+
 	AssertEqual(t, user1.NamedPet.Name, "joins-on_pet_1")
 
-	onQuery2 := DB.Select("id").Where("user_id = users.id AND name = ?", "joins-on_pet_2").Model(&Pet{})
+	onQuery2 := DB.Where(&Pet{Name: "joins-on_pet_2"})
 	var user2 User
 	if err := DB.Joins("NamedPet", onQuery2).Where("users.name = ?", user.Name).First(&user2).Error; err != nil {
 		t.Fatalf("Failed to load with joins on, got error: %v", err)
